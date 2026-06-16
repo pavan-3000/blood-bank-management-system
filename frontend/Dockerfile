@@ -1,21 +1,18 @@
-FROM node:18-alpine AS build-stage
+FROM node:18-alpine AS build
 
 WORKDIR /app
 
-COPY package*.json ./
-COPY vite.config.js ./
-COPY src/ src/
-COPY public/ public/
-COPY components.json ./
-COPY index.html ./
-COPY eslint.config.js ./
+COPY package.json package-lock.json ./
+RUN npm install --production
 
-RUN npm install --production && npm run build
+COPY . .
 
-FROM nginx:alpine AS production-stage
+RUN npm run build
 
-COPY --from=build-stage /app/dist /usr/share/nginx/html
+FROM nginx:alpine
+
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 80
 
