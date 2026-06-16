@@ -13,29 +13,6 @@ pipeline {
             }
         }
 
-        stage('Setup Tools') {
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    sh '''
-                        TOOLS_DIR="$HOME/devpilot-tools"
-                        mkdir -p "$TOOLS_DIR/bin"
-
-                        if ! which docker 2>/dev/null && [ ! -x "$TOOLS_DIR/bin/docker" ]; then
-                            DOCKER_VERSION=24.0.7
-                            curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz" -o /tmp/docker-cli.tgz 2>/dev/null || true
-                            tar -xz -C /tmp -f /tmp/docker-cli.tgz 2>/dev/null || true
-                            mv /tmp/docker/docker "$TOOLS_DIR/bin/docker" 2>/dev/null || true
-                            rm -rf /tmp/docker-cli.tgz /tmp/docker 2>/dev/null || true
-                        fi
-
-                        if ! which trivy 2>/dev/null && [ ! -x "$TOOLS_DIR/bin/trivy" ]; then
-                            curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b "$TOOLS_DIR/bin" 2>/dev/null || true
-                        fi
-                    '''
-                }
-            }
-        }
-
         stage('Docker Build') {
             when { expression { return fileExists('backend/Dockerfile') } }
             steps {
@@ -108,7 +85,7 @@ pipeline {
                                 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=15 ubuntu@3.88.158.70 "mkdir -p ~/devpilot-app && echo 'TU9OR09fVVJJPW1vbmdvGI6Ly9tb25nb2RiOjI3MDE3L215ZGIKSldUX1NFQ1JFVD1zZWNyZXQ=' | base64 -d > ~/devpilot-app/backend.env"
                                 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=15 ubuntu@3.88.158.70 "pip3 install pyyaml -q 2>/dev/null || true; echo \"aW1wb3J0IHlhbWwsIHN5cywgb3MsIGZjbnRsCnBhdGggPSBvcy5wYXRoLmV4cGFuZHVzZXIoJ34vZGV2cGlsb3QtYXBwL2RvY2tlci1jb21wb3NlLnltbCcpCnRhZyA9IHN5cy5hcmd2WzFdCm9zLm1ha2VkaXJzKG9zLnBhdGguZXhwYW5kdXNlcignfi9kZXZwaWxvdC1hcHAnKSwgZXhpc3Rfb2s9VHJ1ZSkKbGYgPSBvcGVuKG9zLnBhdGguZXhwYW5kdXNlcignfi9kZXZwaWxvdC1hcHAvLmRldnBpbG90LmxvY2snKSwgJ3cnKQpmY250bC5mbG9jayhsZiwgZmNudGwuTE9DS19FWCkKdHJ5OgogdHJ5OgogIHdpdGggb3BlbihwYXRoKSBhcyBmOiBkYXRhID0geWFtbC5zYWZlX2xvYWQoZikgb3Ige30KIGV4Y2VwdCBFeGNlcHRpb246CiAgZGF0YSA9IHt9CiBpZiBub3QgaXNpbnN0YW5jZShkYXRhLmdldCgnc2VydmljZXMnKSwgZGljdCk6IGRhdGFbJ3NlcnZpY2VzJ10gPSB7fQogZXhpc3RpbmcgPSBkYXRhWydzZXJ2aWNlcyddLmdldCgnYmFja2VuZCcpCiBwcmludCgnW2RldnBpbG90XSBzZXJ2aWNlPWJhY2tlbmQgZXhpc3Rpbmc9JyArIHN0cihleGlzdGluZyBpcyBub3QgTm9uZSkpCiBpZiBleGlzdGluZzoKICBwcmludCgnW2RldnBpbG90XSBvbGQgaW1hZ2U9JyArIHN0cihleGlzdGluZy5nZXQoJ2ltYWdlJykpICsgJyBvbGQgcG9ydHM9JyArIHN0cihleGlzdGluZy5nZXQoJ3BvcnRzJykpKQogIGV4aXN0aW5nWydpbWFnZSddID0gJ3BhdjMwL2Jsb29kLWJhbmstbWFuYWdlbWVudC1zeXN0ZW0tYmFja2VuZDonICsgdGFnCiAgZXhpc3RpbmdbJ2NvbnRhaW5lcl9uYW1lJ10gPSAnYmFja2VuZCcKICBleGlzdGluZ1sncG9ydHMnXSA9IFsnNTAwMDo1MDAwJ10KICBwcmludCgnW2RldnBpbG90XSBuZXcgaW1hZ2U9JyArIGV4aXN0aW5nWydpbWFnZSddICsgJyBuZXcgcG9ydHM9JyArIHN0cihleGlzdGluZy5nZXQoJ3BvcnRzJykpKQogIGRhdGFbJ3NlcnZpY2VzJ11bJ2JhY2tlbmQnXSA9IGV4aXN0aW5nCiBlbHNlOgogIHByaW50KCdbZGV2cGlsb3RdIGNyZWF0aW5nIG5ldyBzZXJ2aWNlIGJsb2NrJykKICBzdmMgPSB7J2ltYWdlJzogJ3BhdjMwL2Jsb29kLWJhbmstbWFuYWdlbWVudC1zeXN0ZW0tYmFja2VuZDonICsgdGFnLCAnY29udGFpbmVyX25hbWUnOiAnYmFja2VuZCcsICdyZXN0YXJ0JzogJ3VubGVzcy1zdG9wcGVkJ30KICBzdmNbJ3BvcnRzJ10gPSBbJzUwMDA6NTAwMCddCiAgc3ZjWydlbnZfZmlsZSddID0gWyd+L2RldnBpbG90LWFwcC9iYWNrZW5kLmVudiddCiAgcHJpbnQoJ1tkZXZwaWxvdF0gbmV3IHNlcnZpY2UgcG9ydHM9JyArIHN0cihzdmMuZ2V0KCdwb3J0cycpKSkKICBkYXRhWydzZXJ2aWNlcyddWydiYWNrZW5kJ10gPSBzdmMKIGlmIG5vdCBkYXRhWydzZXJ2aWNlcyddLmdldCgnZGInKToKICBkYXRhWydzZXJ2aWNlcyddWydkYiddID0geydpbWFnZSc6ICdtb25nbzo3LjAnLCAnZW52aXJvbm1lbnQnOiB7J01PTkdPX0lOSVREQl9ST09UX1VTRVJOQU1FJzogJ3Jvb3QnLCAnTU9OR09fSU5JVERCX1JPT1RfUEFTU1dPUkQnOiAncm9vdCcsICdNT05HT19JTklUREJfREFUQUJBU0UnOiAnbXlkYid9LCAncmVzdGFydCc6ICd1bmxlc3Mtc3RvcHBlZCcsICdoZWFsdGhjaGVjayc6IHsndGVzdCc6IFsnQ01EJywgJ21vbmdvc2gnLCAnLS1ldmFsJywgImRiLmFkbWluQ29tbWFuZCgncGluZycpIl0sICdpbnRlcnZhbCc6ICc1cycsICd0aW1lb3V0JzogJzVzJywgJ3JldHJpZXMnOiAxMCwgJ3N0YXJ0X3BlcmlvZCc6ICcyMHMnfSwgJ3ZvbHVtZXMnOiBbJ21vbmdvZGF0YTovZGF0YS9kYiddfQogaWYgbm90IGlzaW5zdGFuY2UoZGF0YS5nZXQoJ3ZvbHVtZXMnKSwgZGljdCk6IGRhdGFbJ3ZvbHVtZXMnXSA9IHt9CiBkYXRhWyd2b2x1bWVzJ11bJ21vbmdvZGF0YSddID0ge30KIGN1ciA9IGRhdGFbJ3NlcnZpY2VzJ11bJ2JhY2tlbmQnXQogaWYgbm90IGlzaW5zdGFuY2UoY3VyLmdldCgnZGVwZW5kc19vbicpLCBkaWN0KTogY3VyWydkZXBlbmRzX29uJ10gPSB7fQogY3VyWydkZXBlbmRzX29uJ11bJ2RiJ10gPSB7J2NvbmRpdGlvbic6ICdzZXJ2aWNlX2hlYWx0aHknfQogaWYgbm90IGlzaW5zdGFuY2UoY3VyLmdldCgnZW52aXJvbm1lbnQnKSwgZGljdCk6IGN1clsnZW52aXJvbm1lbnQnXSA9IHt9CiBjdXJbJ2Vudmlyb25tZW50J11bJ0RBVEFCQVNFX1VSTCddID0gJ21vbmdvZGI6Ly9yb290OnJvb3RAZGI6MjcwMTcvbXlkYj9hdXRoU291cmNlPWFkbWluJwogZGF0YVsnc2VydmljZXMnXVsnYmFja2VuZCddID0gY3VyCiB3aXRoIG9wZW4ocGF0aCwgJ3cnKSBhcyBmOiB5YW1sLmR1bXAoZGF0YSwgZiwgZGVmYXVsdF9mbG93X3N0eWxlPUZhbHNlKQogcHJpbnQoJ1tkZXZwaWxvdF0gd3JpdHRlbiB0byAnICsgcGF0aCkKIHByaW50KCdiYWNrZW5kIC0+IHBhdjMwL2Jsb29kLWJhbmstbWFuYWdlbWVudC1zeXN0ZW0tYmFja2VuZDonICsgdGFnKQpmaW5hbGx5OgogZmNudGwuZmxvY2sobGYsIGZjbnRsLkxPQ0tfVU4pCiBsZi5jbG9zZSgp\" | base64 -d > /tmp/devpilot_backend.py"
                                 PREV_TAG=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=15 ubuntu@3.88.158.70 "grep 'image: pav30/blood-bank-management-system-backend:' ~/devpilot-app/docker-compose.yml 2>/dev/null | awk '{print $NF}' | head -1 || echo ''")
-                                ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=30 ubuntu@3.88.158.70 "python3 /tmp/devpilot_backend.py ${BUILD_NUMBER}-${BRANCH_TAG}"
+                                ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=15 ubuntu@3.88.158.70 "python3 /tmp/devpilot_backend.py ${BUILD_NUMBER}-${BRANCH_TAG}"
                                 COMPOSE_CMD=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=15 ubuntu@3.88.158.70 "docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose'")
                                 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=60 ubuntu@3.88.158.70 "cd ~/devpilot-app && $COMPOSE_CMD pull backend && $COMPOSE_CMD up -d" || {
                                     echo "Deploy failed — rolling back to $PREV_TAG"
