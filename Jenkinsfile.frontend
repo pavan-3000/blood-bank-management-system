@@ -13,6 +13,29 @@ pipeline {
             }
         }
 
+        stage('Setup Tools') {
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                    sh '''
+                        TOOLS_DIR="$HOME/devpilot-tools"
+                        mkdir -p "$TOOLS_DIR/bin"
+
+                        if ! which docker 2>/dev/null && [ ! -x "$TOOLS_DIR/bin/docker" ]; then
+                            DOCKER_VERSION=24.0.7
+                            curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz" -o /tmp/docker-cli.tgz 2>/dev/null || true
+                            tar -xz -C /tmp -f /tmp/docker-cli.tgz 2>/dev/null || true
+                            mv /tmp/docker/docker "$TOOLS_DIR/bin/docker" 2>/dev/null || true
+                            rm -rf /tmp/docker-cli.tgz /tmp/docker 2>/dev/null || true
+                        fi
+
+                        if ! which trivy 2>/dev/null && [ ! -x "$TOOLS_DIR/bin/trivy" ]; then
+                            curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b "$TOOLS_DIR/bin" 2>/dev/null || true
+                        fi
+                    '''
+                }
+            }
+        }
+
         stage('Docker Build') {
             when { expression { return fileExists('frontend/Dockerfile') } }
             steps {
@@ -81,17 +104,17 @@ pipeline {
                             sh '''
                                 BRANCH_TAG=$(echo ${GIT_BRANCH:-${BRANCH_NAME:-main}} | sed 's|origin/||' | tr '/' '-' | tr '[:upper:]' '[:lower:]')
                                 REG_PASS_B64=$(echo -n "$REG_PASS" | base64 -w0)
-                                ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=15 ubuntu@54.196.238.12 "echo $REG_PASS_B64 | base64 -d | docker login -u $REG_USER --password-stdin"
-                                ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=15 ubuntu@54.196.238.12 "pip3 install pyyaml -q 2>/dev/null || true; echo \"aW1wb3J0IHlhbWwsIHN5cywgb3MsIGZjbnRsCnBhdGggPSBvcy5wYXRoLmV4cGFuZHVzZXIoJ34vZGV2cGlsb3QtYXBwL2RvY2tlci1jb21wb3NlLnltbCcpCnRhZyA9IHN5cy5hcmd2WzFdCm9zLm1ha2VkaXJzKG9zLnBhdGguZXhwYW5kdXNlcignfi9kZXZwaWxvdC1hcHAnKSwgZXhpc3Rfb2s9VHJ1ZSkKbGYgPSBvcGVuKG9zLnBhdGguZXhwYW5kdXNlcignfi9kZXZwaWxvdC1hcHAvLmRldnBpbG90LmxvY2snKSwgJ3cnKQpmY250bC5mbG9jayhsZiwgZmNudGwuTE9DS19FWCkKdHJ5OgogdHJ5OgogIHdpdGggb3BlbihwYXRoKSBhcyBmOiBkYXRhID0geWFtbC5zYWZlX2xvYWQoZikgb3Ige30KIGV4Y2VwdCBFeGNlcHRpb246CiAgZGF0YSA9IHt9CiBpZiBub3QgaXNpbnN0YW5jZShkYXRhLmdldCgnc2VydmljZXMnKSwgZGljdCk6IGRhdGFbJ3NlcnZpY2VzJ10gPSB7fQogZXhpc3RpbmcgPSBkYXRhWydzZXJ2aWNlcyddLmdldCgnZnJvbnRlbmQnKQogcHJpbnQoJ1tkZXZwaWxvdF0gc2VydmljZT1mcm9udGVuZCBleGlzdGluZz0nICsgc3RyKGV4aXN0aW5nIGlzIG5vdCBOb25lKSkKIGlmIGV4aXN0aW5nOgogIHByaW50KCdbZGV2cGlsb3RdIG9sZCBpbWFnZT0nICsgc3RyKGV4aXN0aW5nLmdldCgnaW1hZ2UnKSkgKyAnIG9sZCBwb3J0cz0nICsgc3RyKGV4aXN0aW5nLmdldCgncG9ydHMnKSkpCiAgZXhpc3RpbmdbJ2ltYWdlJ10gPSAncGF2MzAvYmxvb2QtYmFuay1tYW5hZ2VtZW50LXN5c3RlbS1mcm9udGVuZDonICsgdGFnCiAgZXhpc3RpbmdbJ2NvbnRhaW5lcl9uYW1lJ10gPSAnZnJvbnRlbmQnCiAgZXhpc3RpbmdbJ3BvcnRzJ10gPSBbJzgwMDo4MCddCiAgcHJpbnQoJ1tkZXZwaWxvdF0gbmV3IGltYWdlPScgKyBleGlzdGluZ1snaW1hZ2UnXSArICcgbmV3IHBvcnRzPScgKyBzdHIoZXhpc3RpbmcuZ2V0KCdwb3J0cycpKSkKICBkYXRhWydzZXJ2aWNlcyddWydmcm9udGVuZCddID0gZXhpc3RpbmcKIGVsc2U6CiAgcHJpbnQoJ1tkZXZwaWxvdF0gY3JlYXRpbmcgbmV3IHNlcnZpY2UgYmxvY2snKQogIHN2YyA9IHsnaW1hZ2UnOiAncGF2MzAvYmxvb2QtYmFuay1tYW5hZ2VtZW50LXN5c3RlbS1mcm9udGVuZDonICsgdGFnLCAnY29udGFpbmVyX25hbWUnOiAnZnJvbnRlbmQnLCAncmVzdGFydCc6ICd1bmxlc3Mtc3RvcHBlZCd9CiAgc3ZjWydwb3J0cyddID0gWyc4MDA6ODAnXQogIHByaW50KCdbZGV2cGlsb3RdIG5ldyBzZXJ2aWNlIHBvcnRzPScgKyBzdHIoc3ZjLmdldCgncG9ydHMnKSkpCiAgZGF0YVsnc2VydmljZXMnXVsnZnJvbnRlbmQnXSA9IHN2Ywogd2l0aCBvcGVuKHBhdGgsICd3JykgYXMgZjogeWFtbC5kdW1wKGRhdGEsIGYsIGRlZmF1bHRfZmxvd19zdHlsZT1GYWxzZSkKIHByaW50KCdbZGV2cGlsb3RdIHdyaXR0ZW4gdG8gJyArIHBhdGgpCiBwcmludCgnZnJvbnRlbmQgLT4gcGF2MzAvYmxvb2QtYmFuay1tYW5hZ2VtZW50LXN5c3RlbS1mcm9udGVuZDonICsgdGFnKQpmaW5hbGx5OgogZmNudGwuZmxvY2sobGYsIGZjbnRsLkxPQ0tfVU4pCiBsZi5jbG9zZSgp\" | base64 -d > /tmp/devpilot_frontend.py"
-                                PREV_TAG=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=15 ubuntu@54.196.238.12 "grep 'image: pav30/blood-bank-management-system-frontend:' ~/devpilot-app/docker-compose.yml 2>/dev/null | awk '{print $NF}' | head -1 || echo ''")
-                                ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=30 ubuntu@54.196.238.12 "python3 /tmp/devpilot_frontend.py ${BUILD_NUMBER}-${BRANCH_TAG}"
-                                COMPOSE_CMD=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=15 ubuntu@54.196.238.12 "docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose'")
-                                ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=60 ubuntu@54.196.238.12 "cd ~/devpilot-app && $COMPOSE_CMD pull frontend && $COMPOSE_CMD up -d" || {
+                                ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=15 ubuntu@3.88.158.70 "echo $REG_PASS_B64 | base64 -d | docker login -u $REG_USER --password-stdin"
+                                ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=15 ubuntu@3.88.158.70 "pip3 install pyyaml -q 2>/dev/null || true; echo \"aW1wb3J0IHlhbWwsIHN5cywgb3MsIGZjbnRsCnBhdGggPSBvcy5wYXRoLmV4cGFuZHVzZXIoJ34vZGV2cGlsb3QtYXBwL2RvY2tlci1jb21wb3NlLnltbCcpCnRhZyA9IHN5cy5hcmd2WzFdCm9zLm1ha2VkaXJzKG9zLnBhdGguZXhwYW5kdXNlcignfi9kZXZwaWxvdC1hcHAnKSwgZXhpc3Rfb2s9VHJ1ZSkKbGYgPSBvcGVuKG9zLnBhdGguZXhwYW5kdXNlcignfi9kZXZwaWxvdC1hcHAvLmRldnBpbG90LmxvY2snKSwgJ3cnKQpmY250bC5mbG9jayhsZiwgZmNudGwuTE9DS19FWCkKdHJ5OgogdHJ5OgogIHdpdGggb3BlbihwYXRoKSBhcyBmOiBkYXRhID0geWFtbC5zYWZlX2xvYWQoZikgb3Ige30KIGV4Y2VwdCBFeGNlcHRpb246CiAgZGF0YSA9IHt9CiBpZiBub3QgaXNpbnN0YW5jZShkYXRhLmdldCgnc2VydmljZXMnKSwgZGljdCk6IGRhdGFbJ3NlcnZpY2VzJ10gPSB7fQogZXhpc3RpbmcgPSBkYXRhWydzZXJ2aWNlcyddLmdldCgnZnJvbnRlbmQnKQogcHJpbnQoJ1tkZXZwaWxvdF0gc2VydmljZT1mcm9udGVuZCBleGlzdGluZz0nICsgc3RyKGV4aXN0aW5nIGlzIG5vdCBOb25lKSkKIGlmIGV4aXN0aW5nOgogIHByaW50KCdbZGV2cGlsb3RdIG9sZCBpbWFnZT0nICsgc3RyKGV4aXN0aW5nLmdldCgnaW1hZ2UnKSkgKyAnIG9sZCBwb3J0cz0nICsgc3RyKGV4aXN0aW5nLmdldCgncG9ydHMnKSkpCiAgZXhpc3RpbmdbJ2ltYWdlJ10gPSAncGF2MzAvYmxvb2QtYmFuay1tYW5hZ2VtZW50LXN5c3RlbS1mcm9udGVuZDonICsgdGFnCiAgZXhpc3RpbmdbJ2NvbnRhaW5lcl9uYW1lJ10gPSAnZnJvbnRlbmQnCiAgZXhpc3RpbmdbJ3BvcnRzJ10gPSBbJzgwMDo4MCddCiAgcHJpbnQoJ1tkZXZwaWxvdF0gbmV3IGltYWdlPScgKyBleGlzdGluZ1snaW1hZ2UnXSArICcgbmV3IHBvcnRzPScgKyBzdHIoZXhpc3RpbmcuZ2V0KCdwb3J0cycpKSkKICBkYXRhWydzZXJ2aWNlcyddWydmcm9udGVuZCddID0gZXhpc3RpbmcKIGVsc2U6CiAgcHJpbnQoJ1tkZXZwaWxvdF0gY3JlYXRpbmcgbmV3IHNlcnZpY2UgYmxvY2snKQogIHN2YyA9IHsnaW1hZ2UnOiAncGF2MzAvYmxvb2QtYmFuay1tYW5hZ2VtZW50LXN5c3RlbS1mcm9udGVuZDonICsgdGFnLCAnY29udGFpbmVyX25hbWUnOiAnZnJvbnRlbmQnLCAncmVzdGFydCc6ICd1bmxlc3Mtc3RvcHBlZCd9CiAgc3ZjWydwb3J0cyddID0gWyc4MDA6ODAnXQogIHByaW50KCdbZGV2cGlsb3RdIG5ldyBzZXJ2aWNlIHBvcnRzPScgKyBzdHIoc3ZjLmdldCgncG9ydHMnKSkpCiAgZGF0YVsnc2VydmljZXMnXVsnZnJvbnRlbmQnXSA9IHN2Ywogd2l0aCBvcGVuKHBhdGgsICd3JykgYXMgZjogeWFtbC5kdW1wKGRhdGEsIGYsIGRlZmF1bHRfZmxvd19zdHlsZT1GYWxzZSkKIHByaW50KCdbZGV2cGlsb3RdIHdyaXR0ZW4gdG8gJyArIHBhdGgpCiBwcmludCgnZnJvbnRlbmQgLT4gcGF2MzAvYmxvb2QtYmFuay1tYW5hZ2VtZW50LXN5c3RlbS1mcm9udGVuZDonICsgdGFnKQpmaW5hbGx5OgogZmNudGwuZmxvY2sobGYsIGZjbnRsLkxPQ0tfVU4pCiBsZi5jbG9zZSgp\" | base64 -d > /tmp/devpilot_frontend.py"
+                                PREV_TAG=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=15 ubuntu@3.88.158.70 "grep 'image: pav30/blood-bank-management-system-frontend:' ~/devpilot-app/docker-compose.yml 2>/dev/null | awk '{print $NF}' | head -1 || echo ''")
+                                ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=30 ubuntu@3.88.158.70 "python3 /tmp/devpilot_frontend.py ${BUILD_NUMBER}-${BRANCH_TAG}"
+                                COMPOSE_CMD=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=15 ubuntu@3.88.158.70 "docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose'")
+                                ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=60 ubuntu@3.88.158.70 "cd ~/devpilot-app && $COMPOSE_CMD pull frontend && $COMPOSE_CMD up -d" || {
                                     echo "Deploy failed — rolling back to $PREV_TAG"
-                                    [ -n "$PREV_TAG" ] && ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=15 ubuntu@54.196.238.12 "sed -i 's|image: pav30/blood-bank-management-system-frontend:.*|image: $PREV_TAG|' ~/devpilot-app/docker-compose.yml && cd ~/devpilot-app && $COMPOSE_CMD up -d" || true
+                                    [ -n "$PREV_TAG" ] && ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=15 ubuntu@3.88.158.70 "sed -i 's|image: pav30/blood-bank-management-system-frontend:.*|image: $PREV_TAG|' ~/devpilot-app/docker-compose.yml && cd ~/devpilot-app && $COMPOSE_CMD up -d" || true
                                     exit 1
                                 }
-                                echo "Deployed frontend to http://54.196.238.12"
+                                echo "Deployed frontend to http://3.88.158.70"
                             '''
                         }
                     }
@@ -105,7 +128,7 @@ pipeline {
             script {
                 def status = currentBuild.result ?: 'IN_PROGRESS'
                 def promptText = "Analyze this Jenkins CI/CD build and give 2-3 actionable bullet points: what passed, what failed (if any), and one improvement.\nJob: ${env.JOB_NAME} Build#${env.BUILD_NUMBER} Branch: ${env.GIT_BRANCH ?: env.BRANCH_NAME ?: 'unknown'} Status: ${status}"
-                def aiDone = false;
+                def aiDone = false
 
                 for (def credId : ['devpilot-anthropic-key', 'ANTHROPIC_API_KEY']) {
                     if (aiDone) break
