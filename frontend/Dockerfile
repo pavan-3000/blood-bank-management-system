@@ -1,4 +1,4 @@
-FROM node:20-alpine as builder
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
@@ -23,6 +23,3 @@ EXPOSE 80
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 CMD [ "nginx", "-g", "daemon off;" ]
-
-
-
