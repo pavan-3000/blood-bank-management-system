@@ -8,7 +8,7 @@ RUN npm install
 
 COPY . .
 
-RUN npm run build
+RUN npm run build || { echo 'Build failed, see errors above.'; exit 1; }
 
 # --------
 
